@@ -1,0 +1,554 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Production Tracking System</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+        }
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .step-buttons {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            margin: 20px 0;
+        }
+        .step-buttons button {
+            padding: 10px;
+            border: none;
+            border-radius: 5px;
+            font-size: 14px;
+            cursor: pointer;
+        }
+        .step-buttons button.pending {
+            background-color: red;
+            color: white;
+        }
+        .step-buttons button.in-process {
+            background-color: orange;
+            color: white;
+        }
+        .step-buttons button.completed {
+            background-color: green;
+            color: white;
+        }
+        .progress {
+            margin-top: 20px;
+            width: 100%;
+            background: #ddd;
+            border-radius: 10px;
+            overflow: hidden;
+        }
+        .progress-bar {
+            height: 20px;
+            background: green;
+            width: 0;
+        }
+        .modal {
+            display: none;
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: white;
+            padding: 20px;
+            border: 1px solid #ccc;
+            border-radius: 10px;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+            
+        
+        z-index: 1000;
+            width: 90%;
+            
+        
+        max-width: 400px;
+            max-height: 80vh; /* Limita la altura al 80% de la pantalla */
+            overflow-y: auto; /* Activa el scroll vertical cuando el contenido exceda */
+        }
+        .modal input, .modal select {
+            display: block;
+            width: 100%;
+            margin: 10px 0;
+            padding: 5px;
+        }
+        .modal button {
+            margin: 5px;
+        }
+        .overlay {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.5);
+            z-index: 999;
+        }
+        .product-image {
+            text-align: center;
+            margin-top: 20px;
+        }
+        .product-image img {
+            max-width: 100%;
+            height: auto;
+            border: 1px solid #ccc;
+            border-radius: 10px;
+            margin-top: 10px;
+        }
+        .chart-container {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            margin-top: 40px;
+        }
+        .chart-container canvas {
+            height: 350px;
+            width: 90%;
+            max-width: 1200px;
+        }
+        .chart-summary {
+            margin-left: 20px;
+        }
+    </style>
+    <script>
+        const steps = [
+            "Diseño",
+            "Placas",
+            "Conversión",
+            "Corte",
+            "Impresión",
+            "Troquelado",
+            "Pegado",
+            "Armado",
+            "Revisión",
+            "Empaquetado",
+            "Almacenamiento"
+        ];
+
+        let completedSteps = 0;
+        let estimatedTimes = Array(steps.length).fill(60); // Ejemplo: 60 minutos por paso
+        let realTimes = Array(steps.length).fill(0);
+
+        function openStepDetails(stepIndex) {
+            const modal = document.getElementById("modal");
+            const overlay = document.getElementById("overlay");
+
+            document.getElementById("modal-step-title").textContent = steps[stepIndex];
+            document.getElementById("step-index").value = stepIndex;
+
+            modal.style.display = "block";
+            overlay.style.display = "block";
+        }
+
+        function closeStepDetails() {
+            const modal = document.getElementById("modal");
+            const overlay = document.getElementById("overlay");
+
+            modal.style.display = "none";
+            overlay.style.display = "none";
+        }
+
+        function updateStepStatus() {
+            const stepIndex = parseInt(document.getElementById("step-index").value);
+            const status = document.getElementById("step-status").value;
+            const isApproved = document.getElementById("step-approved").checked;
+            const startTime = document.getElementById("step-start-time").value;
+            const endTime = document.getElementById("step-end-time").value;
+
+            if (startTime && endTime) {
+                const start = new Date(`1970-01-01T${startTime}Z`);
+                const end = new Date(`1970-01-01T${endTime}Z`);
+                realTimes[stepIndex] = (end - start) / (1000 * 60); // Calcular en minutos
+            }
+
+            if (isApproved && status === "finalizado") {
+                document.getElementById(`step-${stepIndex}`).className = "completed";
+                completedSteps++;
+            } else if (status === "en proceso") {
+                document.getElementById(`step-${stepIndex}`).className = "in-process";
+            } else {
+                document.getElementById(`step-${stepIndex}`).className = "pending";
+            }
+
+            updateProgressBar();
+            updateChart();
+            updateTotalTimes();
+            closeStepDetails();
+        }
+
+        function updateProgressBar() {
+            const progress = (completedSteps / steps.length) * 100;
+            document.getElementById("progress-bar").style.width = progress + "%";
+            document.getElementById("progress-percentage").textContent = `${progress.toFixed(2)}%`;
+        }
+
+        function updateChart() {
+            const chart = Chart.getChart("time-chart");
+            if (chart) {
+                chart.data.datasets[0].data = estimatedTimes;
+                chart.data.datasets[1].data = realTimes;
+                chart.update();
+            }
+        }
+
+        function updateTotalTimes() {
+            const totalEstimated = estimatedTimes.reduce((sum, time) => sum + time, 0);
+            const totalReal = realTimes.reduce((sum, time) => sum + time, 0);
+
+            const estHours = Math.floor(totalEstimated / 60);
+            const estMinutes = totalEstimated % 60;
+
+            const realHours = Math.floor(totalReal / 60);
+            const realMinutes = totalReal % 60;
+
+            document.getElementById("total-times").innerHTML = `
+                <p><strong>Total Estimado:</strong> ${estHours}h ${estMinutes}min</p>
+                <p><strong>Total Real:</strong> ${realHours}h ${realMinutes}min</p>
+            `;
+        }
+
+        function calculateProduced() {
+            const received = parseInt(document.getElementById("step-products-received").value) || 0;
+            const mermas = parseInt(document.getElementById("step-mermas").value) || 0;
+            const produced = received - mermas;
+            document.getElementById("step-products-produced").value = produced > 0 ? produced : 0;
+        }
+
+        document.addEventListener("DOMContentLoaded", () => {
+            const buttonsContainer = document.getElementById("buttons-container");
+
+            steps.forEach((step, index) => {
+                const button = document.createElement("button");
+                button.id = `step-${index}`;
+                button.className = "pending";
+                button.textContent = step;
+                button.onclick = () => openStepDetails(index);
+                buttonsContainer.appendChild(button);
+            });
+
+            new Chart(document.getElementById("time-chart"), {
+                type: "bar",
+                data: {
+                    labels: steps,
+                    datasets: [
+                        {
+                            label: "Tiempo Estimado (min)",
+                            backgroundColor: "rgba(75, 192, 192, 0.5)",
+                            data: estimatedTimes,
+                        },
+                        {
+                            label: "Tiempo Real (min)",
+                            backgroundColor: "rgba(255, 99, 132, 0.5)",
+                            data: realTimes,
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    plugins: {
+                        legend: {
+                            position: "top",
+                        },
+                        tooltip: {
+                            callbacks: {
+                                label: (tooltipItem) => {
+                                    const minutes = tooltipItem.raw;
+                                    const hours = Math.floor(minutes / 60);
+                                    const remainingMinutes = minutes % 60;
+                                    return `${hours}h ${remainingMinutes}min`;
+                                }
+                            }
+                        }
+                    },
+                    scales: {
+                        y: {
+                            max: 480, // 8 horas en minutos
+                            ticks: {
+                                callback: (value) => {
+                                    const hours = Math.floor(value / 60);
+                                    const minutes = value % 60;
+                                    return `${hours}h ${minutes}min`;
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+
+            updateTotalTimes();
+        });
+    </script>
+</head>
+<body>
+    <div class="header">
+        <h1>Production Tracking</h1>
+        <div>
+            <p>Tiempo Estimado: <strong>12 Horas</strong></p>
+            <p>Tiempo Real: <strong>--</strong></p>
+        </div>
+    </div>
+
+    <div class="product-image">
+        <input type="file" accept="image/*" onchange="document.getElementById('product-preview').src = URL.createObjectURL(this.files[0])">
+        <img id="product-preview" src="" alt="Vista previa del producto">
+    </div>
+
+    <div class="step-buttons" id="buttons-container"></div>
+
+    <div class="progress">
+        <div class="progress-bar" id="progress-bar"></div>
+    </div>
+    <p id="progress-percentage">0%</p>
+
+    <div class="modal" id="modal">
+        <h2 id="modal-step-title">Detalles del Proceso</h2>
+        <input type="hidden" id="step-index">
+        <label>
+            Fecha: <input type="date" id="step-date">
+        </label>
+        <label>
+            Hora de Inicio: <input type="time" id="step-start-time">
+        </label>
+        <label>
+            Hora de Fin: <input type="time" id="step-end-time">
+        </label>
+        <label>
+            Orden de Producción: <input type="text" id="step-production-order">
+        </label>
+        <label>
+            Cliente: <input type="text" id="step-client">
+        </label>
+        <label>
+            Orden de Compra Insumo: <input type="text" id="step-oc-insumo">
+        </label>
+        <label>
+            OC Pliego a Utilizar: <input type="text" id="step-oc-pliego">
+        </label>
+        <label>
+            Cantidad de Productos Recibidos: <input type="number" id="step-products-received" oninput="calculateProduced()">
+        </label>
+        <label>
+            Cantidad de Mermas: <input type="number" id="step-mermas" oninput="calculateProduced()">
+        </label>
+        <label>
+            Cantidad Producida Satisfactoriamente: <input type="number" id="step-products-produced" readonly>
+        </label>
+        <label>
+            Estado:
+            <select id="step-status">
+                <option value="pendiente">Pendiente</option>
+                <option value="en proceso">En Proceso</option>
+                <option value="finalizado">Finalizado</option>
+            </select>
+        </label>
+        <label>
+            Aprobación: <input type="checkbox" id="step-approved">
+        </label>
+        <div>
+            <button type="button" onclick="updateStepStatus()">Actualizar Estado</button>
+            <button type="button" onclick="closeStepDetails()">Cerrar</button>
+        </div>
+    </div>
+
+    <div class="overlay" id="overlay" onclick="closeStepDetails()"></div>
+
+    <div class="chart-container">
+        <canvas id="time-chart"></canvas>
+        <div class="chart-summary" id="total-times"></div>
+    </div>
+</body>
+</html>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Production Tracking System</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+        }
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .step-buttons {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            margin: 20px 0;
+        }
+        .step-buttons button {
+            padding: 10px;
+            border: none;
+            border-radius: 5px;
+            font-size: 14px;
+            cursor: pointer;
+        }
+        .step-buttons button.pending {
+            background-color: red;
+            color: white;
+        }
+        .step-buttons button.in-process {
+            background-color: orange;
+            color: white;
+        }
+        .step-buttons button.completed {
+            background-color: green;
+            color: white;
+        }
+        .modal {
+            display: none;
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: white;
+            padding: 20px;
+            border: 1px solid #ccc;
+            border-radius: 10px;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+            z-index: 1000;
+            width: 90%;
+            max-width: 400px;
+        }
+        .modal input, .modal select {
+            display: block;
+            width: 100%;
+            margin: 10px 0;
+            padding: 5px;
+        }
+        .modal button {
+            margin: 5px;
+        }
+        .overlay {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.5);
+            z-index: 999;
+        }
+    </style>
+    <script>
+        const steps = [
+            "Diseño",
+            "Placas",
+            "Conversión",
+            "Corte",
+            "Impresión",
+            "Troquelado",
+            "Pegado",
+            "Armado",
+            "Revisión",
+            "Empaquetado",
+            "Almacenamiento"
+        ];
+
+        function openStepModal(stepIndex) {
+            const modal = document.getElementById(`modal-${stepIndex}`);
+            const overlay = document.getElementById("overlay");
+
+            modal.style.display = "block";
+            overlay.style.display = "block";
+        }
+
+        function closeStepModal(stepIndex) {
+            const modal = document.getElementById(`modal-${stepIndex}`);
+            const overlay = document.getElementById("overlay");
+
+            modal.style.display = "none";
+            overlay.style.display = "none";
+        }
+    </script>
+</head>
+<body>
+    <div class="header">
+        <h1>Production Tracking</h1>
+    </div>
+
+    <!-- Botones de los pasos -->
+    <div class="step-buttons" id="buttons-container">
+        <!-- Generar dinámicamente los botones -->
+        <script>
+            steps.forEach((step, index) => {
+                document.write(`
+                    <button class="pending" onclick="openStepModal(${index})">${step}</button>
+                `);
+            });
+        </script>
+    </div>
+
+    <!-- Crear dinámicamente modales para cada paso -->
+    <div id="modals-container">
+        <script>
+            steps.forEach((step, index) => {
+                document.write(`
+                    <div class="modal" id="modal-${index}">
+                        <h2>Detalles del Proceso: ${step}</h2>
+                        <label>
+                            Fecha: <input type="date">
+                        </label>
+                        <label>
+                            Hora de Inicio: <input type="time">
+                        </label>
+                        <label>
+                            Hora de Fin: <input type="time">
+                        </label>
+                        <label>
+                            Orden de Producción: <input type="text">
+                        </label>
+                        <label>
+                            Cliente: <input type="text">
+                        </label>
+                        <label>
+                            Orden de Compra Insumo: <input type="text">
+                        </label>
+                        <label>
+                            OC Pliego a Utilizar: <input type="text">
+                        </label>
+                        <label>
+                            Cantidad de Productos Recibidos: <input type="number">
+                        </label>
+                        <label>
+                            Cantidad de Mermas: <input type="number">
+                        </label>
+                        <label>
+                            Cantidad Producida Satisfactoriamente: <input type="number" readonly>
+                        </label>
+                        <label>
+                            Estado:
+                            <select>
+                                <option value="pendiente">Pendiente</option>
+                                <option value="en proceso">En Proceso</option>
+                                <option value="finalizado">Finalizado</option>
+                            </select>
+                        </label>
+                        <label>
+                            Aprobación: <input type="checkbox">
+                        </label>
+                        <div>
+                            <button type="button" onclick="closeStepModal(${index})">Cerrar</button>
+                        </div>
+                    </div>
+                `);
+            });
+        </script>
+    </div>
+
+    <!-- Overlay para modales -->
+    <div class="overlay" id="overlay"></div>
+</body>
+</html>
